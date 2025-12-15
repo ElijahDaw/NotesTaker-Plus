@@ -1,0 +1,50 @@
+{
+  "name": "notestaker-plus",
+  "version": "0.1.0",
+  "description": "NotesTaker Plus desktop app (Electron + React).",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite",
+    "dev:electron": "wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .",
+    "build": "vite build",
+    "preview": "npm run build && cross-env NODE_ENV=production electron .",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"Add linting (e.g. eslint) when ready\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ElijahDaw/NotesTaker-Plus.git"
+  },
+  "keywords": [
+    "electron",
+    "vite",
+    "react",
+    "notes"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ElijahDaw/NotesTaker-Plus/issues"
+  },
+  "homepage": "https://github.com/ElijahDaw/NotesTaker-Plus#readme",
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.2"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.87.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
