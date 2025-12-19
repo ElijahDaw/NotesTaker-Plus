@@ -8,12 +8,12 @@ import {
   type CSSProperties
 } from 'react';
 import { FONT_PRESETS, TEXT_SIZE_PRESETS } from '../constants/textOptions';
-import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent } from 'react';
+import type { PointerEvent as ReactPointerEvent, MouseEvent as ReactMouseEvent, FormEvent } from 'react';
 import peopleIcon from '../../icons to use/people_16570539.png';
 
 export type CanvasMode = 'pan' | 'draw';
-export type DrawTool = 'cursor' | 'pen' | 'pencil' | 'highlighter' | 'eraser' | 'text' | 'textbox';
-export type TextNodeKind = 'sticky' | 'textbox';
+export type DrawTool = 'cursor' | 'pen' | 'pencil' | 'highlighter' | 'eraser' | 'text' | 'textbox' | 'image';
+export type TextNodeKind = 'sticky' | 'textbox' | 'label';
 export type ShapeTool =
   | 'freeform'
   | 'line'
@@ -26,7 +26,9 @@ export type ShapeTool =
   | 'right-triangle'
   | 'diamond'
   | 'hexagon'
-  | 'star';
+  | 'star'
+  | 'econ-graph'
+  | 'math-graph';
 
 const SHAPE_LABELS: Record<ShapeTool, string> = {
   freeform: 'Freeform',
@@ -40,8 +42,11 @@ const SHAPE_LABELS: Record<ShapeTool, string> = {
   'right-triangle': 'Right Triangle',
   diamond: 'Diamond',
   hexagon: 'Hexagon',
-  star: 'Star'
+  star: 'Star',
+  'econ-graph': 'Economics Graph',
+  'math-graph': 'Math Graph'
 };
+const OPEN_SHAPES: ShapeTool[] = ['line', 'arrow', 'curve', 'econ-graph', 'math-graph'];
 
 type SelectionHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
@@ -93,17 +98,6 @@ interface CanvasMask {
   width: number;
 }
 
-export interface CollaborationRoomChangeDetail {
-  code: string | null;
-  peerId: string;
-  role: 'host' | 'guest' | 'inactive';
-}
-
-export interface CollaborationPresenceDetail {
-  code: string | null;
-  count: number;
-}
-
 export interface CanvasPath {
   id: string;
   color: string;
@@ -116,6 +110,7 @@ export interface CanvasPath {
   isClosed?: boolean;
   pathKind?: PathKind;
   curve?: CurveShape;
+  shapeType?: ShapeTool;
 }
 
 export interface CanvasTextNode {
@@ -131,6 +126,37 @@ export interface CanvasTextNode {
   fontFamily?: string;
   locked?: boolean;
   color?: string;
+  parentPathId?: string;
+}
+
+export interface CanvasImageNode {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  src: string;
+  locked?: boolean;
+}
+
+export interface ImagePlacement {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface TextNodeRequestOptions {
+  text?: string;
+  fontScale?: number;
+  fontScaleLocked?: boolean;
+  fontFamily?: string;
+  locked?: boolean;
+  color?: string;
+  width?: number;
+  height?: number;
+  autoFocus?: boolean;
+  parentPathId?: string;
 }
 
 interface CanvasViewportProps {
@@ -144,19 +170,39 @@ interface CanvasViewportProps {
   paths: CanvasPath[];
   setPaths: (value: CanvasPath[] | ((prev: CanvasPath[]) => CanvasPath[])) => void;
   textNodes: CanvasTextNode[];
-  onRequestTextNode: (point: WorldPoint, kind: TextNodeKind) => void;
+  imageNodes: CanvasImageNode[];
+  onRequestTextNode: (point: WorldPoint, kind: TextNodeKind, options?: TextNodeRequestOptions) => void;
   onUpdateTextNode: (id: string, text: string) => void;
   onDeleteTextNode: (id: string) => void;
   onMoveTextNode: (id: string, x: number, y: number) => void;
   onResizeTextNode: (id: string, width: number, height: number, fontScale?: number, fontScaleLocked?: boolean) => void;
   onUpdateTextNodeStyle: (id: string, updates: Partial<Pick<CanvasTextNode, 'fontScale' | 'fontFamily' | 'fontScaleLocked' | 'locked' | 'width' | 'height' | 'color'>>) => void;
+  onDeleteImageNode: (id: string) => void;
+  onMoveImageNode: (id: string, x: number, y: number) => void;
+  onResizeImageNode: (id: string, width: number, height: number) => void;
+  onImageDrawComplete: (rect: ImagePlacement) => void;
+  onImageDrawCancel?: () => void;
+  imageToolEnabled?: boolean;
   onCopyTextNode: (id: string) => void;
   onCutTextNode: (id: string) => void;
   onDuplicateTextNode: (id: string) => void;
   onReorderTextNode: (id: string, direction: 'forward' | 'backward' | 'front' | 'back') => void;
   pendingFocusId: string | null;
   clearPendingFocus: () => void;
-  onRequestBlankCanvas?: () => void;
+  shareId: string | null;
+  shareStatus: 'disabled' | 'syncing' | 'ready' | 'error';
+  sharePresenceCount: number;
+  accountEmail?: string | null;
+  username?: string | null;
+  canUseShare: boolean;
+  shareRestrictionMessage?: string | null;
+  onOpenAccountPanel?: () => void;
+  onShareUnavailable?: () => void;
+  shareInviteValue: string;
+  shareInviteStatus: 'idle' | 'sending' | 'success' | 'error';
+  shareInviteMessage?: string | null;
+  onShareInviteChange: (value: string) => void;
+  onSendShareInvite: () => void;
   onViewportSizeChange?: (size: ViewportSize) => void;
   onBeginPath?: () => void;
   onStrokeColorUsed?: (color: string) => void;
@@ -172,6 +218,11 @@ const TEXTBOX_MIN_HEIGHT = GRID_SPACING; // 1 grid space height
 const TEXTBOX_MAX_WIDTH = GRID_SPACING * 12;
 const STICKY_DEFAULT_WIDTH = 220;
 const STICKY_DEFAULT_HEIGHT = 120;
+const LABEL_BASE_WIDTH = GRID_SPACING * 0.9;
+const LABEL_MIN_HEIGHT = GRID_SPACING * 0.6;
+const LABEL_MAX_WIDTH = GRID_SPACING * 4;
+const IMAGE_FALLBACK_WIDTH = 320;
+const IMAGE_FALLBACK_HEIGHT = 240;
 const clampTextScale = (value: number) => Math.min(Math.max(value, 0.5), TEXT_SIZE_PRESETS[TEXT_SIZE_PRESETS.length - 1]);
 
 type ResizeHandleId = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
@@ -502,6 +553,78 @@ const getStarPoints = (start: WorldPoint, end: WorldPoint) => {
   return points;
 };
 
+type AxisDirection = 'up' | 'down' | 'left' | 'right';
+
+const appendAxisArrow = (points: WorldPoint[], tip: WorldPoint, direction: AxisDirection, size: number) => {
+  let first: WorldPoint;
+  let second: WorldPoint;
+  switch (direction) {
+    case 'up':
+      first = { x: tip.x - size * 0.6, y: tip.y + size };
+      second = { x: tip.x + size * 0.6, y: tip.y + size };
+      break;
+    case 'down':
+      first = { x: tip.x - size * 0.6, y: tip.y - size };
+      second = { x: tip.x + size * 0.6, y: tip.y - size };
+      break;
+    case 'left':
+      first = { x: tip.x + size, y: tip.y - size * 0.6 };
+      second = { x: tip.x + size, y: tip.y + size * 0.6 };
+      break;
+    case 'right':
+    default:
+      first = { x: tip.x - size, y: tip.y - size * 0.6 };
+      second = { x: tip.x - size, y: tip.y + size * 0.6 };
+      break;
+  }
+  points.push(first);
+  points.push(tip);
+  points.push(second);
+  points.push(tip);
+};
+
+const getEconGraphPoints = (start: WorldPoint, end: WorldPoint) => {
+  const { minX, minY, maxX, maxY } = getBoundsFromPoints(start, end);
+  const origin: WorldPoint = { x: minX, y: maxY };
+  const top: WorldPoint = { x: minX, y: minY };
+  const right: WorldPoint = { x: maxX, y: maxY };
+  const arrowSize = clampNumber(Math.min(maxX - minX, maxY - minY) * 0.15, 8, 26);
+  const points: WorldPoint[] = [];
+  points.push(origin);
+  points.push(top);
+  appendAxisArrow(points, top, 'up', arrowSize);
+  points.push(origin);
+  points.push(right);
+  appendAxisArrow(points, right, 'right', arrowSize);
+  return points;
+};
+
+const getMathGraphPoints = (start: WorldPoint, end: WorldPoint) => {
+  const { minX, minY, maxX, maxY } = getBoundsFromPoints(start, end);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const top: WorldPoint = { x: centerX, y: minY };
+  const bottom: WorldPoint = { x: centerX, y: maxY };
+  const left: WorldPoint = { x: minX, y: centerY };
+  const right: WorldPoint = { x: maxX, y: centerY };
+  const center: WorldPoint = { x: centerX, y: centerY };
+  const arrowSize = clampNumber(Math.min(maxX - minX, maxY - minY) * 0.12, 8, 24);
+  const points: WorldPoint[] = [];
+  points.push(bottom);
+  points.push(top);
+  appendAxisArrow(points, top, 'up', arrowSize);
+  points.push(bottom);
+  appendAxisArrow(points, bottom, 'down', arrowSize);
+  points.push(center);
+  points.push(left);
+  appendAxisArrow(points, left, 'left', arrowSize);
+  points.push(center);
+  points.push(right);
+  appendAxisArrow(points, right, 'right', arrowSize);
+  points.push(center);
+  return points;
+};
+
 const getShapePoints = (shape: ShapeTool, start: WorldPoint, end: WorldPoint) => {
   switch (shape) {
     case 'line':
@@ -524,6 +647,10 @@ const getShapePoints = (shape: ShapeTool, start: WorldPoint, end: WorldPoint) =>
       return getRegularPolygonPoints(6, start, end);
     case 'star':
       return getStarPoints(start, end);
+    case 'econ-graph':
+      return getEconGraphPoints(start, end);
+    case 'math-graph':
+      return getMathGraphPoints(start, end);
     case 'freeform':
     default:
       return [
@@ -546,6 +673,7 @@ interface TextSelectionTarget {
   id: string;
   originX: number;
   originY: number;
+  ignoreLock?: boolean;
 }
 
 type SelectionInteraction =
@@ -743,7 +871,27 @@ const cloneCanvasPath = (path: CanvasPath): CanvasPath => {
     ...path,
     points: path.points.map(point => ({ ...point })),
     eraserMasks: clonedMasks,
-    curve: clonedCurve
+    curve: clonedCurve,
+    shapeType: path.shapeType
+  };
+};
+
+const getTextNodeSize = (node: CanvasTextNode) => {
+  if (node.kind === 'sticky') {
+    return {
+      width: node.width ?? STICKY_DEFAULT_WIDTH,
+      height: node.height ?? STICKY_DEFAULT_HEIGHT
+    };
+  }
+  if (node.kind === 'label') {
+    return {
+      width: node.width ?? LABEL_BASE_WIDTH,
+      height: node.height ?? LABEL_MIN_HEIGHT
+    };
+  }
+  return {
+    width: node.width ?? TEXTBOX_BASE_WIDTH,
+    height: node.height ?? TEXTBOX_MIN_HEIGHT
   };
 };
 
@@ -761,7 +909,8 @@ const createPastedPath = (path: CanvasPath, deltaX: number, deltaY: number): Can
     id: crypto.randomUUID(),
     points: translatePathPoints(path.points, deltaX, deltaY),
     curve: translatedCurve,
-    eraserMasks: path.eraserMasks ? translateMasks(path.eraserMasks, deltaX, deltaY) : path.eraserMasks
+    eraserMasks: path.eraserMasks ? translateMasks(path.eraserMasks, deltaX, deltaY) : path.eraserMasks,
+    shapeType: path.shapeType
   };
 };
 
@@ -1024,20 +1173,6 @@ const findNearestCurveHandle = (
   return closest;
 };
 
-const COLLAB_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const COLLAB_CODE_LENGTH = 5;
-export const COLLAB_ROOM_EVENT = 'ntp-collaboration-room-change';
-export const COLLAB_PRESENCE_EVENT = 'ntp-collaboration-room-presence';
-export const COLLAB_ROOM_BEGIN_EVENT = 'ntp-collaboration-room-begin';
-
-const generateCollaborationCode = () => {
-  let code = '';
-  for (let index = 0; index < COLLAB_CODE_LENGTH; index += 1) {
-    const randomIndex = Math.floor(Math.random() * COLLAB_CODE_CHARS.length);
-    code += COLLAB_CODE_CHARS[randomIndex];
-  }
-  return code;
-};
 
 const CanvasViewport = ({
   mode,
@@ -1050,19 +1185,39 @@ const CanvasViewport = ({
   paths,
   setPaths,
   textNodes,
+  imageNodes,
   onRequestTextNode,
   onUpdateTextNode,
   onDeleteTextNode,
   onMoveTextNode,
   onResizeTextNode,
   onUpdateTextNodeStyle,
+  onDeleteImageNode,
+  onMoveImageNode,
+  onResizeImageNode,
+  onImageDrawComplete,
+  onImageDrawCancel,
+  imageToolEnabled = true,
   onCopyTextNode,
   onCutTextNode,
   onDuplicateTextNode,
   onReorderTextNode,
   pendingFocusId,
   clearPendingFocus,
-  onRequestBlankCanvas,
+  shareId,
+  shareStatus,
+  sharePresenceCount,
+  accountEmail,
+  username,
+  canUseShare,
+  shareRestrictionMessage,
+  onOpenAccountPanel,
+  onShareUnavailable,
+  shareInviteValue,
+  shareInviteStatus,
+  shareInviteMessage,
+  onShareInviteChange,
+  onSendShareInvite,
   onViewportSizeChange,
   onBeginPath,
   onStrokeColorUsed
@@ -1080,150 +1235,33 @@ const CanvasViewport = ({
   const activeShapeTool = useRef<ShapeTool>('freeform');
   const shapeOrigin = useRef<WorldPoint | null>(null);
   const curveDraftRef = useRef<CurveShape | null>(null);
+  const pathsRef = useRef<CanvasPath[]>(paths);
   const touchPoints = useRef<Map<number, TouchPoint>>(new Map());
   const touchGesture = useRef<TouchGestureState | null>(null);
   const cameraRef = useRef(camera);
   const [selectedPathIds, setSelectedPathIds] = useState<string[]>([]);
   const [selectedTextNodeIds, setSelectedTextNodeIds] = useState<string[]>([]);
+  const imagePlacementInteraction = useRef<{ pointerId: number; start: WorldPoint } | null>(null);
+  const [imageDraftRect, setImageDraftRect] = useState<ImagePlacement | null>(null);
   const [isCollaborationOpen, setIsCollaborationOpen] = useState(false);
-  const [collaborationCode, setCollaborationCode] = useState(generateCollaborationCode);
-  const [activeRoomCode, setActiveRoomCode] = useState<string | null>(null);
-  const [isHostingRoom, setIsHostingRoom] = useState(false);
-  const [roomMemberCount, setRoomMemberCount] = useState(0);
-  const [joinCodeInput, setJoinCodeInput] = useState('');
-  const [joinStatus, setJoinStatus] = useState<'idle' | 'success' | 'error'>('idle');
-  const [localPeerId] = useState(() => crypto.randomUUID());
-  const [showStartOptions, setShowStartOptions] = useState(false);
-  const effectiveRoomCode = activeRoomCode ?? collaborationCode;
-  const inviteLink = useMemo(
-    () => `https://notestaker.plus/join/${effectiveRoomCode}`,
-    [effectiveRoomCode]
-  );
-  const qrCodeUrl = useMemo(
-    () =>
-      `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(inviteLink)}`,
-    [inviteLink]
-  );
-  const canAttemptJoin = joinCodeInput.length === COLLAB_CODE_LENGTH && !activeRoomCode;
-
-  useEffect(() => {
-    if (!isCollaborationOpen) return;
-    if (!activeRoomCode) {
-      setJoinCodeInput('');
-    }
-    setJoinStatus('idle');
-    collaborationOverlayRef.current?.focus();
-  }, [activeRoomCode, isCollaborationOpen]);
-
-  useEffect(() => {
-    const handlePresence = (event: Event) => {
-      const detail = (event as CustomEvent<CollaborationPresenceDetail>).detail;
-      if (!detail) return;
-      if (!detail.code || detail.code !== activeRoomCode) return;
-      setRoomMemberCount(detail.count);
-    };
-    window.addEventListener(COLLAB_PRESENCE_EVENT, handlePresence as EventListener);
-    return () => window.removeEventListener(COLLAB_PRESENCE_EVENT, handlePresence as EventListener);
-  }, [activeRoomCode]);
-
-  useEffect(() => {
-    const handleBegin = (event: Event) => {
-      const detail = (event as CustomEvent<{ code: string }>).detail;
-      if (!detail || detail.code !== activeRoomCode) return;
-      setIsCollaborationOpen(false);
-      setShowStartOptions(false);
-    };
-    window.addEventListener(COLLAB_ROOM_BEGIN_EVENT, handleBegin as EventListener);
-    return () => window.removeEventListener(COLLAB_ROOM_BEGIN_EVENT, handleBegin as EventListener);
-  }, [activeRoomCode]);
-
-  useEffect(() => {
-    if (!isCollaborationOpen || activeRoomCode) {
-      setShowStartOptions(false);
-    }
-  }, [activeRoomCode, isCollaborationOpen]);
+  const imageToolActive = imageToolEnabled && drawTool === 'image';
 
   const handleCollaborationButtonClick = () => {
+    if (!canUseShare) {
+      if (onShareUnavailable) {
+        onShareUnavailable();
+      } else {
+        onOpenAccountPanel?.();
+      }
+      return;
+    }
     setIsCollaborationOpen(true);
   };
 
   const handleCloseCollaborationOverlay = () => {
     setIsCollaborationOpen(false);
-    setShowStartOptions(false);
   };
 
-  const announceRoomChange = (code: string | null, role: 'host' | 'guest' | 'inactive') => {
-    const detail: CollaborationRoomChangeDetail = { code, peerId: localPeerId, role };
-    window.dispatchEvent(new CustomEvent(COLLAB_ROOM_EVENT, { detail }));
-  };
-
-  const handleCreateCollaborationRoom = () => {
-    if (activeRoomCode === collaborationCode && isHostingRoom) return;
-    setActiveRoomCode(collaborationCode);
-    setIsHostingRoom(true);
-    setRoomMemberCount(1);
-    setJoinStatus('success');
-    announceRoomChange(collaborationCode, 'host');
-  };
-
-  const handleLeaveCollaborationRoom = () => {
-    if (!activeRoomCode) return;
-    setActiveRoomCode(null);
-    setIsHostingRoom(false);
-    setRoomMemberCount(0);
-    setJoinStatus('idle');
-    announceRoomChange(null, 'inactive');
-  };
-
-  const handleRegenerateCode = () => {
-    if (activeRoomCode) return;
-    setCollaborationCode(generateCollaborationCode());
-  };
-
-  const handleStartRoomClick = () => {
-    if (!activeRoomCode) return;
-    setShowStartOptions(true);
-  };
-
-  const handleCancelStartOptions = () => {
-    setShowStartOptions(false);
-  };
-
-  const handleConfirmStartOption = (kind: 'existing' | 'blank') => {
-    if (kind === 'blank') {
-      onRequestBlankCanvas?.();
-    }
-    setShowStartOptions(false);
-    setIsCollaborationOpen(false);
-    if (activeRoomCode) {
-      window.dispatchEvent(new CustomEvent(COLLAB_ROOM_BEGIN_EVENT, { detail: { code: activeRoomCode } }));
-    }
-  };
-
-  const handleJoinCodeChange = (value: string) => {
-    const normalized = value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, COLLAB_CODE_LENGTH);
-    setJoinCodeInput(normalized);
-    setJoinStatus('idle');
-  };
-
-  const handleJoinRoom = () => {
-    if (!canAttemptJoin) return;
-    setActiveRoomCode(joinCodeInput);
-    setIsHostingRoom(false);
-    setRoomMemberCount(1);
-    setJoinStatus('success');
-    announceRoomChange(joinCodeInput, 'guest');
-  };
-
-  const joinStatusMessage =
-    joinStatus === 'success'
-      ? activeRoomCode
-        ? `Connected to room ${activeRoomCode}`
-        : 'Connected to room.'
-      : joinStatus === 'error'
-        ? 'Room unreachable. Try again.'
-        : '';
-  const canLaunchCollaboration = Boolean(activeRoomCode && isHostingRoom && roomMemberCount > 1);
   const clearTextNodeSelection = useCallback(() => {
     setSelectedTextNodeIds([]);
   }, []);
@@ -1245,6 +1283,44 @@ const CanvasViewport = ({
   const [textContextMenu, setTextContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const textContextMenuRef = useRef<HTMLDivElement | null>(null);
   const closeTextContextMenu = useCallback(() => setTextContextMenu(null), []);
+
+  useEffect(() => {
+    pathsRef.current = paths;
+  }, [paths]);
+
+  useEffect(() => {
+    if ((!imageToolEnabled || drawTool !== 'image') && imagePlacementInteraction.current) {
+      imagePlacementInteraction.current = null;
+      setImageDraftRect(null);
+      onImageDrawCancel?.();
+    }
+    if (!imageToolEnabled || drawTool !== 'image') {
+      setImageDraftRect(null);
+    }
+  }, [drawTool, imageToolEnabled, onImageDrawCancel]);
+
+  const getAttachedTextNodesForPaths = useCallback(
+    (pathsToInclude: CanvasPath[]) => {
+      if (!pathsToInclude.length) return [];
+      const parentIds = new Set(pathsToInclude.map(path => path.id));
+      return textNodes.filter(node => node.parentPathId && parentIds.has(node.parentPathId));
+    },
+    [textNodes]
+  );
+
+  const deleteAttachedTextNodes = useCallback(
+    (parentIds: Set<string>) => {
+      if (!parentIds.size) return;
+      textNodes.forEach(node => {
+        if (node.parentPathId && parentIds.has(node.parentPathId)) {
+          onDeleteTextNode(node.id);
+        }
+      });
+    },
+    [onDeleteTextNode, textNodes]
+  );
+
+  const addGraphLabelsForPath = useCallback(() => {}, []);
 
   const getTouchPointsArray = () => Array.from(touchPoints.current.values());
 
@@ -1595,27 +1671,34 @@ const CanvasViewport = ({
     onBeginPath?.();
     setPaths(prev => [...prev, ...pastedPaths]);
     setSelectedPathIds(pastedPaths.map(path => path.id));
+    pastedPaths.forEach(path => {
+      if (path.shapeType === 'econ-graph' || path.shapeType === 'math-graph') {
+        addGraphLabelsForPath(path.shapeType, path.id, path);
+      }
+    });
     return true;
-  }, [mode, onBeginPath, setPaths, setSelectedPathIds]);
+  }, [addGraphLabelsForPath, mode, onBeginPath, setPaths, setSelectedPathIds]);
 
   const cutSelection = useCallback(() => {
     if (!selectedPathIds.length) return false;
     copySelection();
     const selectedSet = new Set(selectedPathIds);
     onBeginPath?.();
+    deleteAttachedTextNodes(selectedSet);
     setPaths(prev => prev.filter(path => !selectedSet.has(path.id)));
     setSelectedPathIds([]);
     return true;
-  }, [copySelection, onBeginPath, selectedPathIds, setPaths, setSelectedPathIds]);
+  }, [copySelection, deleteAttachedTextNodes, onBeginPath, selectedPathIds, setPaths, setSelectedPathIds]);
 
   const deleteSelection = useCallback(() => {
     if (!selectedPathIds.length) return false;
     const selectedSet = new Set(selectedPathIds);
     onBeginPath?.();
+    deleteAttachedTextNodes(selectedSet);
     setPaths(prev => prev.filter(path => !selectedSet.has(path.id)));
     setSelectedPathIds([]);
     return true;
-  }, [onBeginPath, selectedPathIds, setPaths, setSelectedPathIds]);
+  }, [deleteAttachedTextNodes, onBeginPath, selectedPathIds, setPaths, setSelectedPathIds]);
 
   const updateSelectionLockState = useCallback((locked: boolean) => {
     if (!selectedPathIds.length) return false;
@@ -1786,15 +1869,37 @@ const CanvasViewport = ({
 
   useEffect(() => {
     const handleCopyPasteKeys = (event: KeyboardEvent) => {
-      if (isEditableTarget(event.target)) return;
-      if (!event.metaKey && !event.ctrlKey) return;
       const key = event.key.toLowerCase();
+      if (isEditableTarget(event.target)) return;
+      if (key === 'backspace') {
+        if (cutSelection()) {
+          event.preventDefault();
+      }
+      }
+      if (!event.metaKey && !event.ctrlKey) return;
+      
       if (key === 'c') {
         if (copySelection()) {
           event.preventDefault();
         }
       } else if (key === 'v') {
         if (pasteFromBuffer()) {
+          event.preventDefault();
+        }
+      } else if (key === 'x') {
+        if (cutSelection()) {
+          event.preventDefault();
+        }
+      } else if (key === 'l') {
+        if (event.shiftKey) {
+          if (unlockSelection() && updateSelectionLockState(false)) {
+            event.preventDefault();
+          }
+        } else if (lockSelection() && updateSelectionLockState(true)) {
+            event.preventDefault();
+          }
+      } else if (key === 'l' && event.shiftKey) {
+        if (unlockSelection()) {
           event.preventDefault();
         }
       }
@@ -1896,13 +2001,17 @@ const captureSelectionTargets = (pathsToCapture: CanvasPath[]): SelectionTargetS
     originalCurve: cloneCurve(path.curve)
   }));
 
-const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarget[] =>
+const captureTextSelectionTargets = (
+  nodes: CanvasTextNode[],
+  includeLockedIds?: Set<string>
+): TextSelectionTarget[] =>
   nodes
-    .filter(node => !node.locked)
+    .filter(node => includeLockedIds?.has(node.id) || !node.locked)
     .map(node => ({
       id: node.id,
       originX: node.x,
-      originY: node.y
+      originY: node.y,
+      ignoreLock: includeLockedIds?.has(node.id)
     }));
 
   const getPathsBoundingBox = (pathsToMeasure: CanvasPath[]): BoundingBox | null => {
@@ -1930,10 +2039,11 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
     pathsToMove: CanvasPath[],
     pointerId: number,
     worldPoint: WorldPoint,
-    textNodesToMove: CanvasTextNode[] = []
+    textNodesToMove: CanvasTextNode[] = [],
+    forcedTextNodeIds?: Set<string>
   ) => {
     const movablePaths = pathsToMove.filter(path => !path.locked);
-    const movableTextTargets = captureTextSelectionTargets(textNodesToMove);
+    const movableTextTargets = captureTextSelectionTargets(textNodesToMove, forcedTextNodeIds);
     if (!movablePaths.length && !movableTextTargets.length) return;
     selectionInteraction.current = {
       type: 'move',
@@ -2253,14 +2363,7 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
 
     const selectedTextIds = textNodes
       .filter(node => {
-        const width =
-          node.kind === 'sticky'
-            ? node.width ?? STICKY_DEFAULT_WIDTH
-            : node.width ?? TEXTBOX_BASE_WIDTH;
-        const height =
-          node.kind === 'sticky'
-            ? node.height ?? STICKY_DEFAULT_HEIGHT
-            : node.height ?? TEXTBOX_MIN_HEIGHT;
+        const { width, height } = getTextNodeSize(node);
         const nodeMinX = node.x;
         const nodeMinY = node.y;
         const nodeMaxX = node.x + width;
@@ -2308,8 +2411,7 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
     onStrokeColorUsed?.(color);
     const usingShape = shapeTool !== 'freeform';
     const isCurveShape = shapeTool === 'curve';
-    const isClosedShape =
-      usingShape && shapeTool !== 'line' && shapeTool !== 'arrow' && shapeTool !== 'curve';
+    const isClosedShape = usingShape && !OPEN_SHAPES.includes(shapeTool);
     let newPath: CanvasPath;
     if (isCurveShape) {
       const baseCurve = createCurveFromPoints(worldPoint, worldPoint);
@@ -2324,7 +2426,8 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
         endCap: 'round',
         eraserMasks: [],
         pathKind: 'curve',
-        curve: baseCurve
+        curve: baseCurve,
+        shapeType: 'curve'
       };
       shapeOrigin.current = null;
       activeShapeTool.current = 'curve';
@@ -2343,7 +2446,8 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
         endCap: usingShape ? 'butt' : 'round',
         eraserMasks: [],
         isClosed: isClosedShape,
-        pathKind: 'freehand'
+        pathKind: 'freehand',
+        shapeType: usingShape ? shapeTool : 'freeform'
       };
       if (usingShape) {
         shapeOrigin.current = worldPoint;
@@ -2553,6 +2657,67 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
     curveDraftRef.current = null;
   };
 
+  const beginImagePlacement = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const startPoint = screenToWorld(event.clientX, event.clientY);
+    imagePlacementInteraction.current = {
+      pointerId: event.pointerId,
+      start: startPoint
+    };
+    setImageDraftRect({
+      x: startPoint.x,
+      y: startPoint.y,
+      width: 0,
+      height: 0
+    });
+    containerRef.current?.setPointerCapture(event.pointerId);
+  };
+
+  const updateImagePlacement = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const interaction = imagePlacementInteraction.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) return;
+    const currentPoint = screenToWorld(event.clientX, event.clientY);
+    setImageDraftRect({
+      x: Math.min(interaction.start.x, currentPoint.x),
+      y: Math.min(interaction.start.y, currentPoint.y),
+      width: Math.abs(currentPoint.x - interaction.start.x),
+      height: Math.abs(currentPoint.y - interaction.start.y)
+    });
+  };
+
+  const finalizeImagePlacement = (event: ReactPointerEvent<HTMLDivElement>, cancel = false) => {
+    const interaction = imagePlacementInteraction.current;
+    if (!interaction || interaction.pointerId !== event.pointerId) return false;
+    containerRef.current?.releasePointerCapture(event.pointerId);
+    imagePlacementInteraction.current = null;
+    const currentPoint = screenToWorld(event.clientX, event.clientY);
+    const deltaX = Math.abs(currentPoint.x - interaction.start.x);
+    const deltaY = Math.abs(currentPoint.y - interaction.start.y);
+    setImageDraftRect(null);
+    if (cancel) {
+      onImageDrawCancel?.();
+      return true;
+    }
+    const dragThreshold = Math.max(6 / camera.scale, 2);
+    let rect: ImagePlacement;
+    if (deltaX < dragThreshold && deltaY < dragThreshold) {
+      rect = {
+        x: interaction.start.x - IMAGE_FALLBACK_WIDTH / 2,
+        y: interaction.start.y - IMAGE_FALLBACK_HEIGHT / 2,
+        width: IMAGE_FALLBACK_WIDTH,
+        height: IMAGE_FALLBACK_HEIGHT
+      };
+    } else {
+      rect = {
+        x: Math.min(interaction.start.x, currentPoint.x),
+        y: Math.min(interaction.start.y, currentPoint.y),
+        width: Math.max(deltaX, 1),
+        height: Math.max(deltaY, 1)
+      };
+    }
+    onImageDrawComplete(rect);
+    return true;
+  };
+
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'touch') {
       touchPoints.current.set(event.pointerId, getLocalPoint(event.clientX, event.clientY));
@@ -2682,7 +2847,19 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
         } else if (!pathAlreadySelected) {
           setSelectedPathIds([hitPath.id]);
         }
-        beginSelectionMove(pathsToMove, event.pointerId, worldPoint, selectedTextNodes);
+        const attachedNodes = getAttachedTextNodesForPaths(pathsToMove);
+        const mergedTextNodes = [...selectedTextNodes];
+        let forcedIds: Set<string> | undefined;
+        if (attachedNodes.length) {
+          const existingIds = new Set(mergedTextNodes.map(node => node.id));
+          attachedNodes.forEach(node => {
+            if (!existingIds.has(node.id)) {
+              mergedTextNodes.push(node);
+            }
+          });
+          forcedIds = new Set(attachedNodes.map(node => node.id));
+        }
+        beginSelectionMove(pathsToMove, event.pointerId, worldPoint, mergedTextNodes, forcedIds);
       } else {
         setSelectedPathIds([]);
         beginPan(event);
@@ -2695,6 +2872,7 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
       drawTool !== 'cursor' &&
       drawTool !== 'text' &&
       drawTool !== 'textbox' &&
+      drawTool !== 'image' &&
       event.button === 0
     ) {
       event.preventDefault();
@@ -2703,6 +2881,12 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
       } else {
         beginDraw(event);
       }
+      return;
+    }
+
+    if (mode === 'draw' && imageToolActive && event.button === 0) {
+      event.preventDefault();
+      beginImagePlacement(event);
       return;
     }
 
@@ -2759,6 +2943,16 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
       return;
     }
 
+    if (
+      imageToolActive &&
+      imagePlacementInteraction.current &&
+      imagePlacementInteraction.current.pointerId === event.pointerId
+    ) {
+      event.preventDefault();
+      updateImagePlacement(event);
+      return;
+    }
+
     if (isPanning) {
       event.preventDefault();
       const deltaX = event.clientX - panOrigin.current.x;
@@ -2793,6 +2987,14 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
     }
 
     if (
+      imagePlacementInteraction.current &&
+      event.pointerId === imagePlacementInteraction.current.pointerId
+    ) {
+      finalizeImagePlacement(event);
+      return;
+    }
+
+    if (
       curveHandleInteraction.current &&
       event.pointerId === curveHandleInteraction.current.pointerId
     ) {
@@ -2823,9 +3025,11 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
 
     if (activePointerId.current !== null && event.pointerId === activePointerId.current) {
       const finishedPathId = activePathId.current;
+      const finishedShapeTool = activeShapeTool.current;
       const wasCurveCreation = currentAction.current === 'curve';
+      const wasErase = currentAction.current === 'erase';
       containerRef.current?.releasePointerCapture(event.pointerId);
-      if (currentAction.current === 'erase') {
+      if (wasErase) {
         finalizeEraserStroke();
       }
       endDraw();
@@ -2833,20 +3037,30 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
         setLiveCurveEditPathId(finishedPathId);
         setSelectedPathIds([finishedPathId]);
       }
+      if (finishedPathId) {
+        addGraphLabelsForPath(finishedShapeTool, finishedPathId);
+      }
     }
   };
 
   const handlePointerLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'touch') {
       touchPoints.current.delete(event.pointerId);
-      if (touchPoints.current.size < 2) {
-        touchGesture.current = null;
-      }
+    if (touchPoints.current.size < 2) {
+      touchGesture.current = null;
+    }
+  }
+
+    if (
+      imagePlacementInteraction.current &&
+      event.pointerId === imagePlacementInteraction.current.pointerId
+    ) {
+      finalizeImagePlacement(event, true);
     }
 
-    if (isPanning) {
-      setIsPanning(false);
-    }
+  if (isPanning) {
+    setIsPanning(false);
+  }
     if (
       marqueeInteraction.current &&
       event.pointerId === marqueeInteraction.current.pointerId
@@ -2886,6 +3100,13 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
   };
 
   const handlePointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (
+      imagePlacementInteraction.current &&
+      event.pointerId === imagePlacementInteraction.current.pointerId
+    ) {
+      finalizeImagePlacement(event, true);
+      return;
+    }
     handlePointerUp(event);
   };
 
@@ -3095,6 +3316,54 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
     context.clearRect(0, 0, viewportSize.width, viewportSize.height);
     context.lineJoin = 'round';
 
+    const shouldSmoothPath = (target: CanvasPath) => {
+      const startCap = target.startCap ?? 'round';
+      const endCap = target.endCap ?? 'round';
+      if (target.isClosed) return false;
+      if (target.pathKind === 'curve') return false;
+      if (startCap !== 'round' || endCap !== 'round') return false;
+      return true;
+    };
+
+    const drawLinearPath = (points: WorldPoint[], closePath: boolean) => {
+      if (!points.length) return;
+      const first = worldToScreen(points[0]);
+      context.moveTo(first.x, first.y);
+      if (points.length === 1) {
+        context.lineTo(first.x, first.y);
+        if (closePath) {
+          context.closePath();
+        }
+        return;
+      }
+      for (let i = 1; i < points.length; i += 1) {
+        const screenPoint = worldToScreen(points[i]);
+        context.lineTo(screenPoint.x, screenPoint.y);
+      }
+      if (closePath) {
+        context.closePath();
+      }
+    };
+
+    const drawSmoothPath = (points: WorldPoint[]) => {
+      if (points.length < 3) {
+        drawLinearPath(points, false);
+        return;
+      }
+      const screenPoints = points.map(point => worldToScreen(point));
+      context.moveTo(screenPoints[0].x, screenPoints[0].y);
+      for (let i = 1; i < screenPoints.length - 2; i += 1) {
+        const current = screenPoints[i];
+        const next = screenPoints[i + 1];
+        const midPointX = (current.x + next.x) / 2;
+        const midPointY = (current.y + next.y) / 2;
+        context.quadraticCurveTo(current.x, current.y, midPointX, midPointY);
+      }
+      const penultimate = screenPoints[screenPoints.length - 2];
+      const last = screenPoints[screenPoints.length - 1];
+      context.quadraticCurveTo(penultimate.x, penultimate.y, last.x, last.y);
+    };
+
     paths.forEach(path => {
       if (path.points.length === 0) return;
       if (path.color === 'erase' && !path.eraserMasks) {
@@ -3153,23 +3422,22 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
       };
 
       context.beginPath();
-      const first = worldToScreen(path.points[0]);
-      context.moveTo(first.x, first.y);
-      for (let i = 1; i < path.points.length; i += 1) {
-        const screenPoint = worldToScreen(path.points[i]);
-        context.lineTo(screenPoint.x, screenPoint.y);
-      }
-      if (path.isClosed) {
-        context.closePath();
+      const shouldSmooth = shouldSmoothPath(path);
+      if (shouldSmooth) {
+        drawSmoothPath(path.points);
+      } else {
+        drawLinearPath(path.points, Boolean(path.isClosed));
       }
       context.strokeStyle = strokeColor;
       context.globalAlpha = strokeAlpha;
       context.globalCompositeOperation = 'source-over';
       context.lineWidth = lineWidth;
-      context.lineCap = 'butt';
+      context.lineCap = shouldSmooth ? 'round' : 'butt';
       context.stroke();
-      drawCap('start');
-      drawCap('end');
+      if (!shouldSmooth) {
+        drawCap('start');
+        drawCap('end');
+      }
       const masks = path.eraserMasks ?? [];
       masks.forEach(mask => {
         if (mask.points.length === 0) return;
@@ -3212,6 +3480,9 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
         if (drawTool === 'textbox') {
           return `Text box tool: Click to drop a simple text box. ${panHint} ${zoomHint} ${editHint}`;
         }
+        if (imageToolActive) {
+          return `Image tool: Click or drag to define the frame, then choose a file. ${panHint} ${zoomHint} ${editHint}`;
+        }
         if (isCursorToolActive) {
           return `Cursor: Select a stroke to move it, drag handles to resize, or rotate via the top handle. Hold Shift to drag a selection box or click multiple strokes. ${panHint} ${zoomHint} ${editHint}`;
         }
@@ -3244,13 +3515,81 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
     return classes.join(' ');
   }, [drawTool, effectiveMode, isCursorToolActive, isPanning, mode]);
 
+  const shareStatusLabel = useMemo(() => {
+    switch (shareStatus) {
+      case 'ready':
+        return 'Live';
+      case 'syncing':
+        return 'Syncing';
+      case 'error':
+        return 'Offline';
+      default:
+        return 'Disabled';
+    }
+  }, [shareStatus]);
+
+  const shareStatusDescription = useMemo(() => {
+    switch (shareStatus) {
+      case 'ready':
+        return 'Changes sync instantly across collaborators.';
+      case 'syncing':
+        return 'Syncing the latest version...';
+      case 'error':
+        return 'Connection lost. We will retry automatically.';
+      default:
+        return 'This note is private to your device.';
+    }
+  }, [shareStatus]);
+
+  const sharePresenceMessage = useMemo(() => {
+    if (!shareId) {
+      return 'Enable sharing to invite someone else.';
+    }
+    if (sharePresenceCount <= 1) {
+      return 'Only you are connected right now.';
+    }
+    return `${sharePresenceCount} people are viewing this note.`;
+  }, [shareId, sharePresenceCount]);
+
+  const handleInviteSubmit = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onSendShareInvite();
+  }, [onSendShareInvite]);
+
+  const isSendingInvite = shareInviteStatus === 'sending';
+  const disableInviteButton = isSendingInvite || !shareInviteValue.trim() || !canUseShare;
+
   return (
     <div className="canvas-wrapper">
+      {onOpenAccountPanel && (
+        <button
+          type="button"
+          className="account-button"
+          aria-label={
+            username
+              ? `Signed in as ${username}`
+              : accountEmail
+                ? `Signed in as ${accountEmail}`
+                : 'Sign in'
+          }
+          title={
+            username
+              ? `Signed in as ${username}`
+              : accountEmail
+                ? `Signed in as ${accountEmail}`
+                : 'Sign in or create an account'
+          }
+          onClick={onOpenAccountPanel}
+        >
+          {username ?? accountEmail ?? 'Sign in'}
+        </button>
+      )}
       <button
         type="button"
-        className="collaboration-button"
+        className={`collaboration-button${!canUseShare ? ' collaboration-button--disabled' : ''}`}
         aria-label="Open collaboration tools"
-        title="Collaboration"
+        aria-disabled={!canUseShare}
+        title={canUseShare ? 'Collaboration' : shareRestrictionMessage ?? 'Sharing unavailable'}
         onClick={handleCollaborationButtonClick}
       >
         <img src={peopleIcon} alt="" aria-hidden="true" />
@@ -3273,6 +3612,30 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
             transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.scale})`
           }}
         >
+          {imageToolEnabled && imageDraftRect && (
+            <div
+              className="image-node image-node--draft"
+              style={{
+                left: imageDraftRect.x,
+                top: imageDraftRect.y,
+                width: imageDraftRect.width || 1,
+                height: imageDraftRect.height || 1
+              }}
+            >
+              <div className="image-node__placeholder">Release to place image</div>
+            </div>
+          )}
+          {imageNodes.map(node => (
+            <ImageNodeView
+              key={node.id}
+              node={node}
+              onDelete={onDeleteImageNode}
+              onMove={onMoveImageNode}
+              onResize={onResizeImageNode}
+              cameraScale={camera.scale}
+              drawTool={drawTool}
+            />
+          ))}
           {textNodes.map(node => (
 
             <TextNodeView
@@ -3490,7 +3853,7 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
           className="collaboration-overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Collaboration options"
+          aria-label="Invite collaborators"
           onClick={handleCloseCollaborationOverlay}
         >
           <div
@@ -3511,128 +3874,50 @@ const captureTextSelectionTargets = (nodes: CanvasTextNode[]): TextSelectionTarg
             >
               Close
             </button>
-            <div className="collaboration-overlay__column collaboration-overlay__column--host">
-              <h2 className="collaboration-overlay__heading">Share a Code</h2>
-              <p className="collaboration-overlay__description">
-                Give collaborators this 5-character code to join your room.
-              </p>
-              <div className="collaboration-room-status">
-                {activeRoomCode ? (
-                  <>
-                    <strong>{isHostingRoom ? 'Hosting' : 'Connected to'} room</strong>
-                    <span className="collaboration-room-status__code">{activeRoomCode}</span>
-                    <span className="collaboration-room-status__meta">
-                      {roomMemberCount} active {roomMemberCount === 1 ? 'member' : 'members'}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <strong>Room not started</strong>
-                    <span className="collaboration-room-status__meta">
-                      Generate a code and click Start Room.
-                    </span>
-                  </>
-                )}
-              </div>
-              <div className="collaboration-room-actions">
-                {activeRoomCode ? (
-                  <button type="button" onClick={handleLeaveCollaborationRoom}>
-                    Leave Room
-                  </button>
-                ) : (
-                  <button type="button" onClick={handleCreateCollaborationRoom}>
-                    Create Room
-                  </button>
-                )}
-                {!activeRoomCode && (
-                  <button type="button" className="ghost" onClick={handleRegenerateCode}>
-                    New Code
-                  </button>
-                )}
-                {canLaunchCollaboration && (
-                  <button
-                    type="button"
-                    className="collaboration-launch"
-                    onClick={handleStartRoomClick}
-                  >
-                    Start Collaboration
-                  </button>
-                )}
-              </div>
-              {canLaunchCollaboration && showStartOptions && (
-                <div className="collaboration-start-options">
-                  <p>How do you want to start?</p>
-                  <div className="collaboration-start-options__buttons">
-                    <button type="button" onClick={() => handleConfirmStartOption('existing')}>
-                      Use Current Canvas
-                    </button>
-                    <button type="button" onClick={() => handleConfirmStartOption('blank')}>
-                      Start Blank Canvas
-                    </button>
-                  </div>
-                  <button type="button" className="ghost" onClick={handleCancelStartOptions}>
-                    Cancel
-                  </button>
-                </div>
-              )}
-              <div className="collaboration-code-display" aria-live="polite">
-                {effectiveRoomCode}
-              </div>
-              <label htmlFor="collaboration-join-input" className="collaboration-label">
-                Join a room with a code
-              </label>
-              <div className="collaboration-join-form">
+            <div className="share-pane">
+              <h2>Invite collaborators</h2>
+              <form className="share-pane__form" onSubmit={handleInviteSubmit}>
+                <label htmlFor="share-invite-input">Username or email</label>
                 <input
-                  id="collaboration-join-input"
+                  id="share-invite-input"
                   type="text"
-                  inputMode="text"
-                  value={joinCodeInput}
-                  onChange={event => handleJoinCodeChange(event.target.value)}
-                  maxLength={COLLAB_CODE_LENGTH}
-                  placeholder="ABCDE"
+                  value={shareInviteValue}
+                  onChange={event => onShareInviteChange(event.target.value)}
+                  placeholder="e.g. ShankDank"
                   autoComplete="off"
                   spellCheck={false}
-                  disabled={!!activeRoomCode}
+                  disabled={isSendingInvite || !canUseShare}
                 />
-                <button type="button" onClick={handleJoinRoom} disabled={!canAttemptJoin}>
-                  Join
+                <button type="submit" disabled={disableInviteButton}>
+                  {isSendingInvite ? 'Sending invite…' : 'Send invite'}
                 </button>
-              </div>
-              {activeRoomCode && !canLaunchCollaboration && (
-                <p className="collaboration-join-note">
-                  Waiting for collaborators... Share the code to invite someone else.
-                </p>
-              )}
-              {joinStatus !== 'idle' && (
+              </form>
+              {shareInviteMessage && (
                 <p
-                  className={`collaboration-join-status collaboration-join-status--${joinStatus}`}
+                  className={`share-pane__message share-pane__message--${shareInviteStatus}`}
                   aria-live="polite"
                 >
-                  {joinStatusMessage}
+                  {shareInviteMessage}
                 </p>
               )}
-            </div>
-            <div className="collaboration-overlay__column collaboration-overlay__column--invite">
-              <h2 className="collaboration-overlay__heading">Send a Link</h2>
-              <p className="collaboration-overlay__description">
-                Scan or tap to jump into the same canvas instantly.
-              </p>
-              <div className="collaboration-qr-wrapper">
-                <img src={qrCodeUrl} alt="QR code to join the collaboration room" />
-              </div>
-              <a
-                className="collaboration-link"
-                href={inviteLink}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {inviteLink}
-              </a>
-              <p className="collaboration-link-hint">
-                {activeRoomCode
-                  ? 'Anyone with the link or QR can join this room.'
-                  : 'Start the room to activate this link.'}
-              </p>
+              {!canUseShare && shareRestrictionMessage && (
+                <p className="share-pane__hint share-pane__hint--warning">
+                  {shareRestrictionMessage}
+                </p>
+              )}
+              {canUseShare && !shareId && (
+                <p className="share-pane__hint">
+                  Sharing turns on automatically when you send your first invite.
+                </p>
+              )}
+              {onOpenAccountPanel && (
+                <p className="share-pane__hint">
+                  Need to update your account?{' '}
+                  <button type="button" onClick={onOpenAccountPanel}>
+                    Open profile
+                  </button>
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -3659,6 +3944,269 @@ interface TextNodeProps {
 }
 
 
+interface ImageNodeProps {
+  node: CanvasImageNode;
+  onDelete: (id: string) => void;
+  onMove: (id: string, x: number, y: number) => void;
+  onResize: (id: string, width: number, height: number) => void;
+  cameraScale: number;
+  drawTool: DrawTool;
+}
+
+const IMAGE_MIN_WIDTH = 120;
+const IMAGE_MIN_HEIGHT = 90;
+const IMAGE_MAX_WIDTH = 1600;
+const IMAGE_MAX_HEIGHT = 1200;
+
+
+const ImageNodeView = ({
+  node,
+  onDelete,
+  onMove,
+  onResize,
+  cameraScale,
+  drawTool
+}: ImageNodeProps) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const dragState = useRef<{
+    pointerId: number;
+    originX: number;
+    originY: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const resizeState = useRef<{
+    pointerId: number;
+    originWidth: number;
+    originHeight: number;
+    originX: number;
+    originY: number;
+    startX: number;
+    startY: number;
+    currentWidth: number;
+    currentHeight: number;
+    currentX: number;
+    currentY: number;
+    handle: ResizeHandleConfig;
+  } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const canInteract = drawTool === 'cursor';
+  const className = [
+    'image-node',
+    (isDragging || isResizing) ? 'image-node--active' : ''
+  ].filter(Boolean).join(' ');
+
+  const beginDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    dragState.current = {
+      pointerId: event.pointerId,
+      originX: node.x,
+      originY: node.y,
+      startX: event.clientX,
+      startY: event.clientY
+    };
+    setIsDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const updateDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    const state = dragState.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const deltaX = (event.clientX - state.startX) / cameraScale;
+    const deltaY = (event.clientY - state.startY) / cameraScale;
+    onMove(node.id, state.originX + deltaX, state.originY + deltaY);
+  };
+
+  const endDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    const state = dragState.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    dragState.current = null;
+    setIsDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const beginResize = (handle: ResizeHandleConfig, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    resizeState.current = {
+      pointerId: event.pointerId,
+      originWidth: node.width,
+      originHeight: node.height,
+      originX: node.x,
+      originY: node.y,
+      startX: event.clientX,
+      startY: event.clientY,
+      currentWidth: node.width,
+      currentHeight: node.height,
+      currentX: node.x,
+      currentY: node.y,
+      handle
+    };
+    setIsResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const clampWidth = (value: number) => Math.min(Math.max(value, IMAGE_MIN_WIDTH), IMAGE_MAX_WIDTH);
+  const clampHeight = (value: number) => Math.min(Math.max(value, IMAGE_MIN_HEIGHT), IMAGE_MAX_HEIGHT);
+
+  const updateResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    const state = resizeState.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const deltaX = (event.clientX - state.startX) / cameraScale;
+    const deltaY = (event.clientY - state.startY) / cameraScale;
+    let nextWidth = state.originWidth;
+    let nextHeight = state.originHeight;
+    let nextX = state.originX;
+    let nextY = state.originY;
+    const handle = state.handle;
+    if (handle.xDir === 1) {
+      nextWidth = clampWidth(state.originWidth + deltaX);
+    } else if (handle.xDir === -1) {
+      nextWidth = clampWidth(state.originWidth - deltaX);
+      const appliedDelta = state.originWidth - nextWidth;
+      nextX = state.originX + appliedDelta;
+    }
+    if (handle.yDir === 1) {
+      nextHeight = clampHeight(state.originHeight + deltaY);
+    } else if (handle.yDir === -1) {
+      nextHeight = clampHeight(state.originHeight - deltaY);
+      const appliedDelta = state.originHeight - nextHeight;
+      nextY = state.originY + appliedDelta;
+    }
+    state.currentWidth = nextWidth;
+    state.currentHeight = nextHeight;
+    state.currentX = nextX;
+    state.currentY = nextY;
+    onMove(node.id, nextX, nextY);
+    onResize(node.id, nextWidth, nextHeight);
+  };
+
+  const endResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    const state = resizeState.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    resizeState.current = null;
+    setIsResizing(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    onMove(node.id, state.currentX, state.currentY);
+    onResize(node.id, state.currentWidth, state.currentHeight);
+  };
+
+  const handleContainerPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('.image-node__button')) {
+      return;
+    }
+    event.stopPropagation();
+    event.preventDefault();
+    beginDrag(event);
+  };
+
+  const handleContainerPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    event.stopPropagation();
+    if (dragState.current) {
+      updateDrag(event);
+    }
+  };
+
+  const handleContainerPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    event.stopPropagation();
+    if (dragState.current) {
+      endDrag(event);
+    }
+  };
+
+  const handleContainerPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    event.stopPropagation();
+    if (dragState.current) {
+      endDrag(event);
+    }
+  };
+
+  const handleResizePointerDown = (handle: ResizeHandleConfig) => (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    event.stopPropagation();
+    event.preventDefault();
+    beginResize(handle, event);
+  };
+
+  const handleResizePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    event.stopPropagation();
+    if (resizeState.current) {
+      updateResize(event);
+    }
+  };
+
+  const handleResizePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    event.stopPropagation();
+    if (resizeState.current) {
+      endResize(event);
+    }
+  };
+
+  const handleResizePointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canInteract) return;
+    event.stopPropagation();
+    if (resizeState.current) {
+      endResize(event);
+    }
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      style={{ left: node.x, top: node.y, width: node.width, height: node.height }}
+      onPointerDown={handleContainerPointerDown}
+      onPointerMove={handleContainerPointerMove}
+      onPointerUp={handleContainerPointerUp}
+      onPointerCancel={handleContainerPointerCancel}
+    >
+      <img src={node.src} alt="Inserted canvas element" draggable={false} />
+      <div className="image-node__actions">
+        <button
+          type="button"
+          className="image-node__button"
+          onClick={event => {
+            event.stopPropagation();
+            onDelete(node.id);
+          }}
+          title="Delete image"
+        >
+          ×
+        </button>
+      </div>
+      {canInteract &&
+        TEXTBOX_RESIZE_HANDLES.map(handle => (
+          <div
+            key={handle.id}
+            className="image-node__resize-handle"
+            style={{ cursor: handle.cursor, ...handle.style }}
+            onPointerDown={handleResizePointerDown(handle)}
+            onPointerMove={handleResizePointerMove}
+            onPointerUp={handleResizePointerUp}
+            onPointerCancel={handleResizePointerCancel}
+          />
+        ))}
+    </div>
+  );
+};
+
 const TextNodeView = ({
   node,
   onChange,
@@ -3677,8 +4225,9 @@ const TextNodeView = ({
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const variant = node.kind ?? 'sticky';
-  const isTextBox = variant === 'textbox';
-  const isLocked = !!node.locked;
+  const isLabel = variant === 'label';
+  const isTextBox = variant === 'textbox' || isLabel;
+  const isLocked = isLabel ? true : !!node.locked;
   const [isFocused, setIsFocused] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -3706,16 +4255,19 @@ const TextNodeView = ({
   } | null>(null);
   const className = [
     'text-node',
-    isTextBox ? 'text-node--textbox' : 'text-node--sticky',
+    isLabel ? 'text-node--label' : isTextBox ? 'text-node--textbox' : 'text-node--sticky',
     isTextBox && (isFocused || isDragging || isResizing) ? 'text-node--textbox-active' : '',
     isLocked ? 'text-node--locked' : '',
     isSelected ? 'text-node--selected' : ''
   ].filter(Boolean).join(' ');
-  const placeholder = isTextBox ? 'Start typing...' : 'Jot something down...';
+  const placeholder = isLabel ? '' : isTextBox ? 'Start typing...' : 'Jot something down...';
   const fontFamily = node.fontFamily ?? 'Inter';
   const textColor = node.color ?? '#111827';
   const isTextBoxToolActive = isTextBox && drawTool === 'textbox';
   const canInteractWithTextBox = !isTextBox || drawTool === 'cursor' || drawTool === 'textbox';
+  const minWidth = isLabel ? LABEL_BASE_WIDTH : TEXTBOX_BASE_WIDTH;
+  const maxWidth = isLabel ? LABEL_MAX_WIDTH : TEXTBOX_MAX_WIDTH;
+  const minHeight = isLabel ? LABEL_MIN_HEIGHT : TEXTBOX_MIN_HEIGHT;
 
   const isPointInsideTextContent = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!isTextBoxToolActive) return true;
@@ -3779,8 +4331,8 @@ const TextNodeView = ({
     }
     textarea.style.height = 'auto';
     textarea.style.width = 'auto';
-    const baseWidth = node.width ?? TEXTBOX_BASE_WIDTH;
-    const baseHeight = node.height ?? TEXTBOX_MIN_HEIGHT;
+    const baseWidth = node.width ?? minWidth;
+    const baseHeight = node.height ?? minHeight;
     let measuredWidth = Math.ceil(textarea.scrollWidth + 2);
     let measuredHeight = Math.ceil(textarea.scrollHeight + 2);
     const storedScale = node.fontScale ?? 1;
@@ -3797,18 +4349,15 @@ const TextNodeView = ({
       textarea.style.fontSize = '';
       textarea.style.lineHeight = '';
     }
-    const nextWidth = Math.min(
-      Math.max(measuredWidth, baseWidth, TEXTBOX_BASE_WIDTH),
-      TEXTBOX_MAX_WIDTH
-    );
-    const nextHeight = Math.max(measuredHeight, baseHeight, TEXTBOX_MIN_HEIGHT);
+    const nextWidth = Math.min(Math.max(measuredWidth, baseWidth, minWidth), maxWidth);
+    const nextHeight = Math.max(measuredHeight, baseHeight, minHeight);
     setTextBoxDimensions(nextWidth, nextHeight);
-    const widthChanged = Math.abs((node.width ?? TEXTBOX_BASE_WIDTH) - nextWidth) > 0.5;
-    const heightChanged = Math.abs((node.height ?? TEXTBOX_MIN_HEIGHT) - nextHeight) > 0.5;
+    const widthChanged = Math.abs((node.width ?? minWidth) - nextWidth) > 0.5;
+    const heightChanged = Math.abs((node.height ?? minHeight) - nextHeight) > 0.5;
     if ((widthChanged || heightChanged) && !isResizing) {
       onResize(node.id, nextWidth, nextHeight);
     }
-  }, [isResizing, isTextBox, node.fontScale, node.height, node.id, node.width, onResize, setTextBoxDimensions]);
+  }, [isResizing, isTextBox, maxWidth, minHeight, minWidth, node.fontScale, node.height, node.id, node.width, onResize, setTextBoxDimensions]);
 
   useLayoutEffect(() => {
     resizeTextBox();
@@ -3866,8 +4415,8 @@ const TextNodeView = ({
 
   const beginResize = (handle: ResizeHandleConfig, event: ReactPointerEvent<HTMLDivElement>) => {
     if (!isTextBox || isLocked || !canInteractWithTextBox) return;
-    const originWidth = node.width ?? TEXTBOX_BASE_WIDTH;
-    const originHeight = node.height ?? TEXTBOX_MIN_HEIGHT;
+    const originWidth = node.width ?? minWidth;
+    const originHeight = node.height ?? minHeight;
     const originX = node.x;
     const originY = node.y;
     resizeState.current = {
@@ -3898,9 +4447,8 @@ const TextNodeView = ({
     event.preventDefault();
     const deltaX = (event.clientX - state.startX) / cameraScale;
     const deltaY = (event.clientY - state.startY) / cameraScale;
-    const clampWidthValue = (value: number) =>
-      Math.min(Math.max(value, TEXTBOX_BASE_WIDTH), TEXTBOX_MAX_WIDTH);
-    const clampHeightValue = (value: number) => Math.max(value, TEXTBOX_MIN_HEIGHT);
+    const clampWidthValue = (value: number) => Math.min(Math.max(value, minWidth), maxWidth);
+    const clampHeightValue = (value: number) => Math.max(value, minHeight);
     let nextWidth = state.originWidth;
     let nextHeight = state.originHeight;
     let nextX = state.originX;
@@ -4056,6 +4604,7 @@ const TextNodeView = ({
         onChange={event => onChange(node.id, event.target.value)}
         onFocus={handleTextareaFocus}
         onBlur={handleTextareaBlur}
+        readOnly={isLabel}
         onPointerDown={event => {
           if (isTextBoxToolActive && event.shiftKey) {
             event.preventDefault();

@@ -1,4 +1,4 @@
-import type { CameraState, CanvasPath, CanvasTextNode } from '../components/CanvasViewport';
+import type { CameraState, CanvasPath, CanvasImageNode, CanvasTextNode } from '../components/CanvasViewport';
 
 export interface NoteDocument {
   version: number;
@@ -6,15 +6,25 @@ export interface NoteDocument {
   camera: CameraState;
   paths: CanvasPath[];
   textNodes: CanvasTextNode[];
+  imageNodes?: CanvasImageNode[];
   strokeColor: string;
   strokeScale: number;
   defaultTextScale: number | null;
   defaultTextFont: string;
+  shareId?: string | null;
+  sharedUpdatedAt?: string | null;
 }
 
 export interface NoteBridgeSavePayload {
   document: NoteDocument;
   fileName: string;
+}
+
+export interface NoteBridgeSharedSavePayload {
+  document: NoteDocument;
+  fileName: string;
+  shareId: string;
+  previousFileName?: string | null;
 }
 
 export type NoteBridgeSaveResult =
@@ -45,6 +55,7 @@ export type NoteBridgeImportResult =
 
 export interface NoteBridge {
   saveDocument: (payload: NoteBridgeSavePayload) => Promise<NoteBridgeSaveResult>;
+  saveSharedDocument?: (payload: NoteBridgeSharedSavePayload) => Promise<NoteBridgeSaveResult>;
   openDocument: () => Promise<NoteBridgeOpenResult>;
   listDocuments: () => Promise<NoteBridgeListResult>;
   importDocuments: () => Promise<NoteBridgeImportResult>;

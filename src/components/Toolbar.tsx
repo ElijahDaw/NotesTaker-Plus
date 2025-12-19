@@ -34,6 +34,9 @@ interface ToolbarProps {
   onTextFontChange: (value: string) => void;
   onSaveNote: () => void;
   onOpenNote: () => void;
+  onInsertTable: () => void;
+  enableInsertSection?: boolean;
+  enableImageTool?: boolean;
   currentFileLabel?: string | null;
 }
 
@@ -99,7 +102,9 @@ const SHAPE_OPTIONS: Array<{
   { label: 'Right Triangle', value: 'right-triangle', description: '90° corner' },
   { label: 'Diamond', value: 'diamond', description: 'Rhombus flow' },
   { label: 'Hexagon', value: 'hexagon', description: 'Six-sided badge' },
-  { label: 'Star', value: 'star', description: '5-point burst' }
+  { label: 'Star', value: 'star', description: '5-point burst' },
+  { label: 'Econ Graph', value: 'econ-graph', description: 'Axes labeled P/Q' },
+  { label: 'Math Graph', value: 'math-graph', description: 'Axes labeled X/Y' }
 ];
 
 const shapeIconProps = {
@@ -199,6 +204,20 @@ const ShapeChipIcon = ({ shape }: { shape: ShapeTool }) => {
           <polygon points="18 2 21 9 28 9 22 13 24 20 18 16 12 20 14 13 8 9 15 9" />
         </svg>
       );
+    case 'econ-graph':
+      return (
+        <svg {...shapeIconProps}>
+          <line x1="8" y1="20" x2="8" y2="4" />
+          <line x1="8" y1="20" x2="28" y2="20" />
+        </svg>
+      );
+    case 'math-graph':
+      return (
+        <svg {...shapeIconProps}>
+          <line x1="6" y1="12" x2="30" y2="12" />
+          <line x1="18" y1="4" x2="18" y2="20" />
+        </svg>
+      );
     case 'freeform':
     default:
       return (
@@ -220,6 +239,39 @@ const ShapesBadgeIcon = () => (
   >
     <rect x="3" y="4" width="14" height="14" rx="3" ry="3" />
     <circle cx="20" cy="12" r="7" />
+  </svg>
+);
+
+const InsertImageIcon = () => (
+  <svg
+    width="28"
+    height="28"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="3" y="5" width="18" height="14" rx="2" ry="2" />
+    <circle cx="9" cy="10" r="1.4" fill="currentColor" />
+    <path d="M3 16l4-4 5 5 3-3 6 6" />
+  </svg>
+);
+
+const InsertTableIcon = () => (
+  <svg
+    width="28"
+    height="28"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+  >
+    <rect x="3" y="5" width="18" height="14" rx="2" ry="2" />
+    <line x1="3" y1="11" x2="21" y2="11" />
+    <line x1="10" y1="5" x2="10" y2="19" />
+    <line x1="16" y1="5" x2="16" y2="19" />
   </svg>
 );
 
@@ -247,6 +299,9 @@ const Toolbar = ({
   onTextFontChange,
   onSaveNote,
   onOpenNote,
+  onInsertTable,
+  enableInsertSection = true,
+  enableImageTool = true,
   currentFileLabel
 }: ToolbarProps) => {
   const [showHexPicker, setShowHexPicker] = useState(false);
@@ -497,6 +552,33 @@ const Toolbar = ({
               )}
             </div>
           </div>
+          {enableInsertSection && (
+            <div className="draw-panel__section draw-panel__section--insert">
+              <div className="section-label">Insert</div>
+              <div className="insert-actions" role="group" aria-label="Insert elements">
+                {enableImageTool && (
+                  <button
+                    type="button"
+                    className={`chip chip--icon${drawTool === 'image' ? ' active' : ''}`}
+                    onClick={() => handleToolSelect('image')}
+                    title="Add an image"
+                  >
+                    <InsertImageIcon />
+                    <span>Image</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="chip chip--icon"
+                  onClick={onInsertTable}
+                  title="Insert a table"
+                >
+                  <InsertTableIcon />
+                  <span>Table</span>
+                </button>
+              </div>
+            </div>
+          )}
           <div className="draw-panel__section draw-panel__section--tools">
             <div className="section-label">Tool</div>
             <div className="chip-group">

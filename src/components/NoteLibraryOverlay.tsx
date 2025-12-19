@@ -62,6 +62,10 @@ const NotePreviewCanvas = ({ document }: { document?: NoteDocument | null }) => 
         points.push({ x: node.x + node.width, y: node.y + node.height });
       }
     }
+    for (const image of document.imageNodes ?? []) {
+      points.push({ x: image.x, y: image.y });
+      points.push({ x: image.x + (image.width ?? 0), y: image.y + (image.height ?? 0) });
+    }
     let minX = 0;
     let minY = 0;
     let maxX = 1;
@@ -119,6 +123,24 @@ const NotePreviewCanvas = ({ document }: { document?: NoteDocument | null }) => 
       ctx.font = 'bold 10px Inter, sans-serif';
       const text = node.text?.slice(0, 16) || 'Text';
       ctx.fillText(text, topLeft.x + 4, topLeft.y + 14);
+    }
+    for (const image of document.imageNodes ?? []) {
+      const width = image.width || 160;
+      const height = image.height || 120;
+      const topLeft = project({ x: image.x, y: image.y });
+      const size = {
+        w: width * scale,
+        h: height * scale
+      };
+      ctx.fillStyle = '#e2e8f0';
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1;
+      ctx.fillRect(topLeft.x, topLeft.y, size.w, size.h);
+      ctx.strokeRect(topLeft.x, topLeft.y, size.w, size.h);
+      ctx.beginPath();
+      ctx.moveTo(topLeft.x + 6, topLeft.y + size.h - 6);
+      ctx.lineTo(topLeft.x + size.w - 6, topLeft.y + 6);
+      ctx.stroke();
     }
   }, [document]);
 
@@ -196,22 +218,25 @@ const NoteLibraryOverlay = ({
           <div className="note-library-empty">No notes found.</div>
         ) : (
           <div className="note-library-grid">
-            {filteredFiles.map(file => (
-              <button
-                key={file.path}
-                type="button"
-                className="note-library-card"
-                onClick={() => onSelect(file)}
-              >
-                <NotePreviewCanvas document={file.document ?? null} />
-                <div className="note-library-cardMeta">
-                  <div className="note-library-cardName">{getDisplayName(file.fileName)}</div>
-                  <div className="note-library-cardMetaLine">
-                    Updated {new Date(file.updatedAt).toLocaleString()}
+            {filteredFiles.map(file => {
+              const cardKey = file.path ?? `${file.fileName}-${file.updatedAt}`;
+              return (
+                <button
+                  key={cardKey}
+                  type="button"
+                  className="note-library-card"
+                  onClick={() => onSelect(file)}
+                >
+                  <NotePreviewCanvas document={file.document ?? null} />
+                  <div className="note-library-cardMeta">
+                    <div className="note-library-cardName">{getDisplayName(file.fileName)}</div>
+                    <div className="note-library-cardMetaLine">
+                      Updated {new Date(file.updatedAt).toLocaleString()}
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ const NOTE_FILE_FILTERS = [
   { name: 'JSON', extensions: ['json'] }
 ];
 let notesDirectoryPath;
+const SHARED_FOLDER_NAME = 'Shared';
 
 const getNotesDirectory = () => {
   if (!notesDirectoryPath) {
@@ -22,6 +23,13 @@ const ensureNotesDirectory = async () => {
   const dir = getNotesDirectory();
   await fs.mkdir(dir, { recursive: true });
   return dir;
+};
+
+const ensureSharedDirectory = async () => {
+  const baseDir = await ensureNotesDirectory();
+  const sharedDir = path.join(baseDir, SHARED_FOLDER_NAME);
+  await fs.mkdir(sharedDir, { recursive: true });
+  return sharedDir;
 };
 
 const createWindow = () => {
@@ -95,6 +103,26 @@ const resolveUniqueFileName = async (directory, fileName) => {
   }
 };
 
+const resolveSharedFileTarget = async (shareId, preferredName) => {
+  const baseDirectory = await ensureSharedDirectory();
+  const shareDirectory = path.join(baseDirectory, shareId);
+  await fs.mkdir(shareDirectory, { recursive: true });
+  try {
+    const legacyFiles = await fs.readdir(baseDirectory);
+    await Promise.all(
+      legacyFiles
+        .filter(entry => entry.includes(shareId) && entry.toLowerCase().endsWith(NOTE_FILE_EXTENSION))
+        .map(entry => fs.rm(path.join(baseDirectory, entry), { force: true }))
+    );
+  } catch {
+    // ignore
+  }
+  const safeBase = sanitizeFileName(preferredName ?? 'Shared note');
+  const fileName = ensureExtension(safeBase);
+  const fullPath = path.join(shareDirectory, fileName);
+  return { directory: shareDirectory, fileName, fullPath };
+};
+
 const readNoteFile = async (filePath, fileNameOverride) => {
   const stats = await fs.stat(filePath);
   let document = null;
@@ -112,6 +140,28 @@ const readNoteFile = async (filePath, fileNameOverride) => {
   };
 };
 
+const collectNotesFromDirectory = async directory => {
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      const nested = await collectNotesFromDirectory(fullPath);
+      files.push(...nested);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    if (!entry.name.toLowerCase().endsWith(NOTE_FILE_EXTENSION)) continue;
+    try {
+      const metadata = await readNoteFile(fullPath, entry.name);
+      files.push(metadata);
+    } catch {
+      continue;
+    }
+  }
+  return files;
+};
+
 ipcMain.handle('note:save', async (event, payload) => {
   try {
     const document = payload?.document ?? payload;
@@ -124,6 +174,36 @@ ipcMain.handle('note:save', async (event, payload) => {
     const filePath = path.join(directory, fileName);
     await fs.writeFile(filePath, JSON.stringify(document, null, 2), 'utf8');
     return { status: 'saved', path: filePath, fileName };
+  } catch (error) {
+    return { status: 'error', message: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('note:saveShared', async (event, payload) => {
+  try {
+    const document = payload?.document;
+    const shareId = payload?.shareId;
+    if (!shareId) {
+      throw new Error('Share ID required');
+    }
+    if (!document || typeof document !== 'object') {
+      throw new Error('Invalid note payload');
+    }
+    const preferredName = payload?.fileName;
+    const { fileName, fullPath } = await resolveSharedFileTarget(shareId, preferredName);
+    await fs.writeFile(fullPath, JSON.stringify(document, null, 2), 'utf8');
+    if (payload?.previousFileName) {
+      try {
+        const baseDir = await ensureNotesDirectory();
+        const originalPath = path.join(baseDir, payload.previousFileName);
+        if (originalPath !== fullPath) {
+          await fs.rm(originalPath, { force: true });
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return { status: 'saved', path: fullPath, fileName };
   } catch (error) {
     return { status: 'error', message: error instanceof Error ? error.message : 'Unknown error' };
   }
@@ -154,18 +234,16 @@ ipcMain.handle('note:open', async event => {
 ipcMain.handle('note:list', async () => {
   try {
     const directory = await ensureNotesDirectory();
-    const entries = await fs.readdir(directory, { withFileTypes: true });
-    const files = [];
-    for (const entry of entries) {
-      if (!entry.isFile()) continue;
-      if (!entry.name.toLowerCase().endsWith(NOTE_FILE_EXTENSION)) continue;
-      const fullPath = path.join(directory, entry.name);
-      try {
-        const metadata = await readNoteFile(fullPath, entry.name);
-        files.push(metadata);
-      } catch (error) {
-        continue;
+    const files = await collectNotesFromDirectory(directory);
+    const sharedDirectory = path.join(directory, SHARED_FOLDER_NAME);
+    try {
+      const stats = await fs.stat(sharedDirectory);
+      if (stats.isDirectory()) {
+        const sharedFiles = await collectNotesFromDirectory(sharedDirectory);
+        files.push(...sharedFiles);
       }
+    } catch {
+      // ignore missing shared folder
     }
     files.sort((a, b) => b.updatedAt - a.updatedAt);
     return { status: 'ok', files };

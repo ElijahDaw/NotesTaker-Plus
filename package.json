@@ -36,7 +36,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "concurrently": "^9.2.0",
     "cross-env": "^7.0.3",
-    "electron": "^33.2.0",
+    "electron": "^39.2.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.6.3",
     "vite": "^6.0.5",
@@ -45,6 +45,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.87.1",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "resend": "^6.6.0"
   }
 }
