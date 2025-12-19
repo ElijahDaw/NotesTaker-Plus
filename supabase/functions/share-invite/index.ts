@@ -130,9 +130,10 @@ const ensureRecipientHasAccount = async (email: string) => {
   }
 
   const normalizedEmail = email.trim().toLowerCase();
-  const url = new URL("/auth/v1/admin/users", SUPABASE_URL);
-  url.searchParams.set("email", normalizedEmail);
-  url.searchParams.set("per_page", "1");
+  const url = new URL("/rest/v1/allowed_invite_emails", SUPABASE_URL);
+  url.searchParams.set("select", "email");
+  url.searchParams.set("email", `eq.${normalizedEmail}`);
+  url.searchParams.set("limit", "1");
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -143,15 +144,8 @@ const ensureRecipientHasAccount = async (email: string) => {
   });
 
   if (response.ok) {
-    const result = (await response.json()) as {
-      users?: Array<{ id: string; email?: string | null }>;
-    };
-    if (Array.isArray(result?.users)) {
-      return result.users.some(
-        user => Boolean(user?.id) && user.email?.trim().toLowerCase() === normalizedEmail
-      );
-    }
-    return false;
+    const result = (await response.json()) as Array<{ email: string }>;
+    return Array.isArray(result) && result.length > 0;
   }
 
   if (response.status === 404) {

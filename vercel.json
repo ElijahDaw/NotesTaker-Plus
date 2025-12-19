@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/share/(.*)",
+      "destination": "/share.html?id=$1"
+    }
+  ]
+}
