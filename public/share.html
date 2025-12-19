@@ -158,12 +158,15 @@
       shareIdEl.textContent = `Share ID: ${shareId}`;
       const deepLink = `notestaker://share/${shareId}`;
       deepLinkEl.href = deepLink;
-
-      const launchApp = () => {
+      deepLinkEl.addEventListener('click', event => {
+        event.preventDefault();
         window.location.href = deepLink;
-      };
+      });
 
-      setTimeout(launchApp, 800);
+      // Attempt to launch automatically shortly after the page loads
+      setTimeout(() => {
+        window.location.href = deepLink;
+      }, 800);
     }
   </script>
 </body>
