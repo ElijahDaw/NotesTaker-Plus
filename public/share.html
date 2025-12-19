@@ -140,7 +140,11 @@
 
   <script>
     const params = new URLSearchParams(window.location.search);
-    const shareId = (params.get('id') || '').trim();
+    const shareIdFromQuery = (params.get('id') || '').trim();
+    const pathSegments = window.location.pathname.split('/').filter(Boolean);
+    const shareIdFromPath =
+      pathSegments[0] === 'share' && pathSegments[1] ? pathSegments[1].trim() : '';
+    const shareId = shareIdFromQuery || shareIdFromPath;
     const statusEl = document.getElementById('status');
     const shareIdEl = document.getElementById('share-id');
     const deepLinkEl = document.getElementById('deep-link');
