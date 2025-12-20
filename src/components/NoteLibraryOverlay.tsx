@@ -161,9 +161,19 @@ const NoteLibraryOverlay = ({
   onCreateNew
 }: NoteLibraryOverlayProps) => {
   const filteredFiles = useMemo(() => {
-    if (!searchValue.trim()) return files;
     const normalized = searchValue.trim().toLowerCase();
-    return files.filter(file => file.fileName.toLowerCase().includes(normalized));
+    const seenKeys = new Set<string>();
+    return files.filter(file => {
+      if (normalized && !file.fileName.toLowerCase().includes(normalized)) {
+        return false;
+      }
+      const key = file.path ?? `${file.fileName}-${file.updatedAt}`;
+      if (seenKeys.has(key)) {
+        return false;
+      }
+      seenKeys.add(key);
+      return true;
+    });
   }, [files, searchValue]);
 
   const getDisplayName = (fileName: string) => {
