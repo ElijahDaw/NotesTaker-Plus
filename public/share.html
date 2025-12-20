@@ -56,7 +56,8 @@
       margin-bottom: 20px;
     }
 
-    .actions {
+    .actions,
+    .fallback {
       display: flex;
       flex-direction: column;
       gap: 12px;
@@ -64,7 +65,8 @@
     }
 
     .primary-btn,
-    .secondary-btn {
+    .secondary-btn,
+    .ghost-btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -90,8 +92,15 @@
       color: #0f172a;
     }
 
+    .ghost-btn {
+      background: transparent;
+      color: #2563eb;
+      border: 1px solid rgba(37, 99, 235, 0.25);
+    }
+
     .primary-btn:hover,
-    .secondary-btn:hover {
+    .secondary-btn:hover,
+    .ghost-btn:hover {
       transform: translateY(-1px);
     }
 
@@ -128,13 +137,23 @@
     </p>
     <p class="share-id" id="share-id"></p>
 
-    <div class="actions">
+    <div class="actions" id="actions">
       <a id="deep-link" class="primary-btn" href="#" target="_self" rel="noreferrer">
         Open in NotesTaker
       </a>
       <a class="secondary-btn" href="https://notestakerplus.vercel.app/" target="_blank" rel="noreferrer">
         Download NotesTaker
       </a>
+    </div>
+
+    <div class="fallback" id="fallback" style="display:none;">
+      <p style="margin-bottom:0;">If the app didn't open:</p>
+      <button id="copy-btn" class="ghost-btn" type="button">Copy share ID</button>
+      <ol style="margin:0;padding-left:20px;color:#475569;font-size:15px;">
+        <li>Open NotesTaker on your desktop.</li>
+        <li>Open the Collaboration panel.</li>
+        <li>Choose “Join shared note” and paste the share ID.</li>
+      </ol>
     </div>
   </main>
 
@@ -148,12 +167,14 @@
     const statusEl = document.getElementById('status');
     const shareIdEl = document.getElementById('share-id');
     const deepLinkEl = document.getElementById('deep-link');
+    const fallbackEl = document.getElementById('fallback');
+    const copyBtn = document.getElementById('copy-btn');
 
     if (!shareId) {
       statusEl.textContent = 'This invite link is missing a share ID. Double-check the email invite and try again.';
       statusEl.classList.add('error');
       shareIdEl.textContent = '';
-      deepLinkEl.style.display = 'none';
+      document.getElementById('actions').style.display = 'none';
     } else {
       shareIdEl.textContent = `Share ID: ${shareId}`;
       const deepLink = `notestaker://share/${shareId}`;
@@ -163,10 +184,38 @@
         window.location.href = deepLink;
       });
 
+      let appOpened = false;
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          appOpened = true;
+        }
+      });
+      const launchApp = () => {
+        window.location.href = deepLink;
+      };
+
       // Attempt to launch automatically shortly after the page loads
       setTimeout(() => {
-        window.location.href = deepLink;
+        launchApp();
       }, 800);
+
+      // If nothing happens within a few seconds, reveal manual instructions
+      setTimeout(() => {
+        if (!appOpened) {
+          fallbackEl.style.display = 'flex';
+          statusEl.textContent = 'If NotesTaker didn’t open automatically, use the share ID below to join from the desktop app.';
+        }
+      }, 4000);
+
+      copyBtn.addEventListener('click', () => {
+        navigator.clipboard.writeText(shareId).then(() => {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(() => (copyBtn.textContent = 'Copy share ID'), 1800);
+        }).catch(() => {
+          copyBtn.textContent = 'Copy failed';
+          setTimeout(() => (copyBtn.textContent = 'Copy share ID'), 1800);
+        });
+      });
     }
   </script>
 </body>
