@@ -1764,6 +1764,136 @@ select {
   }
 }
 
+@media (max-width: 720px) {
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.65rem 1rem;
+  }
+
+  .toolbar__branding {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .product-tagline {
+    display: none;
+  }
+
+  .toolbar__spacer {
+    display: none;
+  }
+
+  .toolbar__modes {
+    order: 2;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .toolbar__file {
+    position: static;
+    transform: none;
+    order: 3;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .toolbar__status {
+    order: 4;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .draw-panel {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.65rem 1rem 0.9rem;
+  }
+
+  .draw-panel__section {
+    flex: 1 1 140px;
+    align-items: center;
+    text-align: center;
+  }
+
+  .draw-panel__section--shapes,
+  .draw-panel__section--color {
+    align-items: center;
+    text-align: center;
+  }
+
+  .shape-dropdown {
+    width: 100%;
+  }
+
+  .shape-dropdown__menu {
+    width: min(320px, 92vw);
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .text-toolRow,
+  .text-controls {
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+  }
+
+  .text-size-inline,
+  .text-font-inline {
+    align-items: center;
+  }
+
+  .text-node textarea {
+    font-size: 1rem;
+  }
+
+  .note-library-window {
+    width: min(100%, 100vw);
+    padding: 1rem;
+    border-radius: 16px;
+    max-height: 92vh;
+  }
+
+  .note-library-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .note-library-headerActions {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .note-library-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stroke-scale-wrapper {
+    left: 0.5rem;
+  }
+
+  .stroke-scale {
+    width: 70px;
+    min-height: 260px;
+    padding: 0.75rem 0.65rem 0.6rem;
+  }
+
+  .account-button {
+    top: calc(0.75rem + env(safe-area-inset-top));
+    right: calc(0.75rem + env(safe-area-inset-right));
+  }
+
+  .collaboration-button {
+    right: calc(0.75rem + env(safe-area-inset-right));
+    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  }
+}
+
 .stroke-scale-wrapper {
   position: absolute;
   left: 1rem;

@@ -299,19 +299,12 @@ interface TouchPoint {
   y: number;
 }
 
-type TouchGestureState =
-  | {
-      type: 'pan';
-      originCamera: CameraState;
-      originCentroid: TouchPoint;
-    }
-  | {
-      type: 'zoom';
-      originCamera: CameraState;
-      originDistance: number;
-      anchorLocal: TouchPoint;
-      anchorWorld: WorldPoint;
-    };
+type TouchGestureState = {
+  type: 'zoom';
+  originCamera: CameraState;
+  originDistance: number;
+  anchorWorld: WorldPoint;
+};
 
 const getPathBoundingBox = (path: CanvasPath): BoundingBox | null => {
   if (path.points.length === 0) return null;
@@ -1332,18 +1325,6 @@ const CanvasViewport = ({
     currentAction.current = null;
   };
 
-  const beginTouchPan = (points: TouchPoint[], cancelDrawing: boolean) => {
-    if (cancelDrawing) {
-      cancelActiveDrawing();
-    }
-    const centroid = getTouchCentroid(points);
-    touchGesture.current = {
-      type: 'pan',
-      originCamera: cameraRef.current,
-      originCentroid: centroid
-    };
-  };
-
   const beginTouchZoom = (points: TouchPoint[], cancelDrawing: boolean) => {
     if (cancelDrawing) {
       cancelActiveDrawing();
@@ -1359,21 +1340,14 @@ const CanvasViewport = ({
       type: 'zoom',
       originCamera: currentCamera,
       originDistance: distance,
-      anchorLocal: centroid,
       anchorWorld
     };
   };
 
   const maybeStartTouchGesture = (points: TouchPoint[], cancelDrawing: boolean) => {
-    if (points.length >= 3) {
+    if (points.length >= 2) {
       if (touchGesture.current?.type !== 'zoom') {
         beginTouchZoom(points, cancelDrawing);
-      }
-      return;
-    }
-    if (points.length === 2) {
-      if (touchGesture.current?.type !== 'pan') {
-        beginTouchPan(points, cancelDrawing);
       }
       return;
     }
@@ -1384,28 +1358,18 @@ const CanvasViewport = ({
     const gesture = touchGesture.current;
     if (!gesture) return;
     const points = getTouchPointsArray();
-    if (gesture.type === 'pan') {
-      if (points.length !== 2) return;
-      const centroid = getTouchCentroid(points);
-      setCamera({
-        x: gesture.originCamera.x + (centroid.x - gesture.originCentroid.x),
-        y: gesture.originCamera.y + (centroid.y - gesture.originCentroid.y),
-        scale: gesture.originCamera.scale
-      });
-    } else if (gesture.type === 'zoom') {
-      if (points.length < 3) return;
-      const centroid = getTouchCentroid(points);
-      const distance = Math.max(getAverageDistance(points, centroid), 1);
-      const scaleRatio = distance / gesture.originDistance;
-      const targetScale = clampZoom(gesture.originCamera.scale * scaleRatio);
-      const newX = gesture.anchorLocal.x - gesture.anchorWorld.x * targetScale;
-      const newY = gesture.anchorLocal.y - gesture.anchorWorld.y * targetScale;
-      setCamera({
-        x: newX,
-        y: newY,
-        scale: targetScale
-      });
-    }
+    if (points.length < 2) return;
+    const centroid = getTouchCentroid(points);
+    const distance = Math.max(getAverageDistance(points, centroid), 1);
+    const scaleRatio = distance / gesture.originDistance;
+    const targetScale = clampZoom(gesture.originCamera.scale * scaleRatio);
+    const newX = centroid.x - gesture.anchorWorld.x * targetScale;
+    const newY = centroid.y - gesture.anchorWorld.y * targetScale;
+    setCamera({
+      x: newX,
+      y: newY,
+      scale: targetScale
+    });
   };
 
   const getStrokeStyle = useCallback(() => {
@@ -3468,7 +3432,7 @@ const captureTextSelectionTargets = (
 
   const instructions = useMemo(() => {
     const panHint = 'Pan: drag with two fingers or hold Space and drag with the mouse.';
-    const zoomHint = 'Zoom: use a three-finger gesture or hold Cmd/Ctrl while scrolling.';
+    const zoomHint = 'Zoom: pinch with two fingers or hold Cmd/Ctrl while scrolling.';
     const editHint = 'Undo/Redo: Cmd/Ctrl+Z or Shift+Cmd/Ctrl+Z.';
     switch (mode) {
       case 'pan':
