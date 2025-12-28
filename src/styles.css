@@ -1847,8 +1847,11 @@ select {
     align-items: center;
   }
 
+  input,
+  textarea,
+  select,
   .text-node textarea {
-    font-size: 1rem;
+    font-size: 16px;
   }
 
   .note-library-window {

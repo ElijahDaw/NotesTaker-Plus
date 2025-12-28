@@ -2687,6 +2687,10 @@ const captureTextSelectionTargets = (
       touchPoints.current.set(event.pointerId, getLocalPoint(event.clientX, event.clientY));
       const points = getTouchPointsArray();
       if (points.length >= 2) {
+        if (activePointerId.current !== null && currentAction.current) {
+          event.preventDefault();
+          return;
+        }
         event.preventDefault();
         maybeStartTouchGesture(points, true);
         return;
@@ -2699,6 +2703,24 @@ const captureTextSelectionTargets = (
     }
 
     if (event.button === 2) return; // ignore context menu button
+
+    if (
+      event.pointerType === 'touch' &&
+      mode === 'draw' &&
+      drawTool !== 'cursor' &&
+      drawTool !== 'text' &&
+      drawTool !== 'textbox' &&
+      drawTool !== 'image' &&
+      event.button === 0
+    ) {
+      event.preventDefault();
+      if (drawTool === 'eraser') {
+        beginErase(event);
+      } else {
+        beginDraw(event);
+      }
+      return;
+    }
 
     const pendingCurveHandle = curveHandleInteraction.current;
     if (
@@ -3010,10 +3032,11 @@ const captureTextSelectionTargets = (
   const handlePointerLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'touch') {
       touchPoints.current.delete(event.pointerId);
-    if (touchPoints.current.size < 2) {
-      touchGesture.current = null;
+      if (touchPoints.current.size < 2) {
+        touchGesture.current = null;
+      }
+      return;
     }
-  }
 
     if (
       imagePlacementInteraction.current &&
@@ -3022,9 +3045,9 @@ const captureTextSelectionTargets = (
       finalizeImagePlacement(event, true);
     }
 
-  if (isPanning) {
-    setIsPanning(false);
-  }
+    if (isPanning) {
+      setIsPanning(false);
+    }
     if (
       marqueeInteraction.current &&
       event.pointerId === marqueeInteraction.current.pointerId
