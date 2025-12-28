@@ -299,12 +299,18 @@ interface TouchPoint {
   y: number;
 }
 
-type TouchGestureState = {
-  type: 'zoom';
-  originCamera: CameraState;
-  originDistance: number;
-  anchorWorld: WorldPoint;
-};
+type TouchGestureState =
+  | {
+      type: 'pan';
+      originCamera: CameraState;
+      originCentroid: TouchPoint;
+    }
+  | {
+      type: 'zoom';
+      originCamera: CameraState;
+      originDistance: number;
+      anchorWorld: WorldPoint;
+    };
 
 const getPathBoundingBox = (path: CanvasPath): BoundingBox | null => {
   if (path.points.length === 0) return null;
@@ -1325,6 +1331,18 @@ const CanvasViewport = ({
     currentAction.current = null;
   };
 
+  const beginTouchPan = (points: TouchPoint[], cancelDrawing: boolean) => {
+    if (cancelDrawing) {
+      cancelActiveDrawing();
+    }
+    const centroid = getTouchCentroid(points);
+    touchGesture.current = {
+      type: 'pan',
+      originCamera: cameraRef.current,
+      originCentroid: centroid
+    };
+  };
+
   const beginTouchZoom = (points: TouchPoint[], cancelDrawing: boolean) => {
     if (cancelDrawing) {
       cancelActiveDrawing();
@@ -1345,7 +1363,13 @@ const CanvasViewport = ({
   };
 
   const maybeStartTouchGesture = (points: TouchPoint[], cancelDrawing: boolean) => {
-    if (points.length >= 2) {
+    if (points.length >= 3) {
+      if (touchGesture.current?.type !== 'pan') {
+        beginTouchPan(points, cancelDrawing);
+      }
+      return;
+    }
+    if (points.length === 2) {
       if (touchGesture.current?.type !== 'zoom') {
         beginTouchZoom(points, cancelDrawing);
       }
@@ -1358,6 +1382,16 @@ const CanvasViewport = ({
     const gesture = touchGesture.current;
     if (!gesture) return;
     const points = getTouchPointsArray();
+    if (gesture.type === 'pan') {
+      if (points.length < 3) return;
+      const centroid = getTouchCentroid(points);
+      setCamera({
+        x: gesture.originCamera.x + (centroid.x - gesture.originCentroid.x),
+        y: gesture.originCamera.y + (centroid.y - gesture.originCentroid.y),
+        scale: gesture.originCamera.scale
+      });
+      return;
+    }
     if (points.length < 2) return;
     const centroid = getTouchCentroid(points);
     const distance = Math.max(getAverageDistance(points, centroid), 1);
@@ -1954,8 +1988,24 @@ const CanvasViewport = ({
     [camera]
   );
 
+  const maxZoom = viewportSize.width > 0 && viewportSize.width <= 720 ? 1 : MAX_ZOOM;
   const clampZoom = (scale: number) =>
-    Math.min(Math.max(scale, MIN_ZOOM), MAX_ZOOM);
+    Math.min(Math.max(scale, MIN_ZOOM), maxZoom);
+
+  useEffect(() => {
+    if (viewportSize.width <= 0 || viewportSize.height <= 0) return;
+    if (camera.scale <= maxZoom) return;
+    const center = { x: viewportSize.width / 2, y: viewportSize.height / 2 };
+    const worldX = (center.x - camera.x) / camera.scale;
+    const worldY = (center.y - camera.y) / camera.scale;
+    const newX = center.x - worldX * maxZoom;
+    const newY = center.y - worldY * maxZoom;
+    setCamera(current => ({
+      x: newX,
+      y: newY,
+      scale: Math.min(current.scale, maxZoom)
+    }));
+  }, [camera.scale, camera.x, camera.y, maxZoom, setCamera, viewportSize.height, viewportSize.width]);
 
 const captureSelectionTargets = (pathsToCapture: CanvasPath[]): SelectionTargetSnapshot[] =>
   pathsToCapture.map(path => ({
@@ -3454,7 +3504,7 @@ const captureTextSelectionTargets = (
   }, [drawPaths]);
 
   const instructions = useMemo(() => {
-    const panHint = 'Pan: drag with two fingers or hold Space and drag with the mouse.';
+    const panHint = 'Pan: drag with three fingers or hold Space and drag with the mouse.';
     const zoomHint = 'Zoom: pinch with two fingers or hold Cmd/Ctrl while scrolling.';
     const editHint = 'Undo/Redo: Cmd/Ctrl+Z or Shift+Cmd/Ctrl+Z.';
     switch (mode) {
